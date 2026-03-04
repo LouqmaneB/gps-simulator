@@ -6,25 +6,40 @@ import dotenv from "dotenv";
 dotenv.config();
 
 const app = express();
+
+// -------------------
+// Middlewares
+// -------------------
 app.use(cors());
 app.use(express.json());
 
-// ---- MongoDB connection ----  \\
-mongoose
-  .connect(process.env.MONGODB_URI)
-  .then(() => console.log("MongoDB connected"))
-  .catch((err) => console.error(err));
+// -------------------
+// MongoDB Connection (Serverless Safe)
+// -------------------
+let isConnected = false;
 
-// ---- Schema: live bus positions ----  \\
+const connectDB = async () => {
+  if (isConnected) return;
+
+  if (!process.env.MONGODB_URI) {
+    throw new Error("MONGODB_URI is not defined");
+  }
+
+  const db = await mongoose.connect(process.env.MONGODB_URI);
+  isConnected = db.connections[0].readyState === 1;
+  console.log("MongoDB connected");
+};
+
+// -------------------
+// Schema
+// -------------------
 const busPositionSchema = new mongoose.Schema(
   {
     bus: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Bus",
+      type: String, // 🔥 Use String for GPS simulator
       required: true,
       unique: true,
     },
-
     location: {
       type: {
         type: String,
@@ -34,46 +49,61 @@ const busPositionSchema = new mongoose.Schema(
       coordinates: {
         type: [Number], // [lng, lat]
         required: true,
-        index: "2dsphere",
       },
     },
   },
-  {
-    timestamps: true,
-  },
+  { timestamps: true }
 );
 
-const BusPosition = mongoose.model("BusPosition", busPositionSchema);
+// Geo index
+busPositionSchema.index({ location: "2dsphere" });
 
-// ---- Endpoint: receive GPS updates ----  \\
+const BusPosition =
+  mongoose.models.BusPosition ||
+  mongoose.model("BusPosition", busPositionSchema);
+
+// -------------------
+// Routes
+// -------------------
 app.post("/api/bus-positions", async (req, res) => {
-  const { busId, lat, lng } = req.body;
-
-  if (!busId || lat == null || lng == null) {
-    return res.status(400).json({ message: "Invalid payload" });
-  }
-
   try {
+    await connectDB();
+
+    const { busId, lat, lng } = req.body;
+
+    if (!busId || lat == null || lng == null) {
+      return res.status(400).json({ message: "Invalid payload" });
+    }
+
     await BusPosition.findOneAndUpdate(
       { bus: busId },
       {
+        bus: busId,
         location: {
           type: "Point",
-          coordinates: [lng, lat], 
+          coordinates: [lng, lat],
         },
       },
       {
         upsert: true,
         new: true,
         setDefaultsOnInsert: true,
-      },
+      }
     );
 
     res.status(200).json({ message: "Position updated" });
   } catch (err) {
-    res.status(500).json({ message: err });
+    console.error("ERROR:", err);
+    res.status(500).json({ message: err.message });
   }
 });
 
-// ---- Start server ----  \\
+// Optional test route
+app.get("/api/health", (req, res) => {
+  res.json({ status: "Backend running 🚀" });
+});
+
+// -------------------
+// EXPORT FOR VERCEL
+// -------------------
 export default app;
