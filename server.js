@@ -67,7 +67,7 @@ const BusPosition =
 // -------------------
 app.post("/api/bus-positions", async (req, res) => {
   try {
-    await connectDB();
+    console.log("Incoming body:", req.body);
 
     const { busId, lat, lng } = req.body;
 
@@ -81,19 +81,15 @@ app.post("/api/bus-positions", async (req, res) => {
         bus: busId,
         location: {
           type: "Point",
-          coordinates: [lng, lat],
+          coordinates: [Number(lng), Number(lat)],
         },
       },
-      {
-        upsert: true,
-        new: true,
-        setDefaultsOnInsert: true,
-      }
+      { upsert: true, new: true }
     );
 
     res.status(200).json({ message: "Position updated" });
   } catch (err) {
-    console.error("ERROR:", err);
+    console.error("ROUTE ERROR:", err);
     res.status(500).json({ message: err.message });
   }
 });
