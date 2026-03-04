@@ -16,19 +16,19 @@ app.use(express.json());
 // -------------------
 // MongoDB Connection (Serverless Safe)
 // -------------------
-let isConnected = false;
+let cached = null;
 
-const connectDB = async () => {
-  if (isConnected) return;
+async function connectDB() {
+  if (cached) return cached;
 
-  if (!process.env.MONGODB_URI) {
-    throw new Error("MONGODB_URI is not defined");
-  }
-
-  const db = await mongoose.connect(process.env.MONGODB_URI);
-  isConnected = db.connections[0].readyState === 1;
-  console.log("MongoDB connected");
-};
+  const db = await mongoose.connect(process.env.MONGODB_URI, {
+    bufferCommands: false, // prevents long buffering
+  });
+  cached = db;
+  console.log("MongoDB connected (serverless-safe)");
+  return db;
+}
+connectDB();
 
 // -------------------
 // Schema
@@ -52,7 +52,7 @@ const busPositionSchema = new mongoose.Schema(
       },
     },
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 // Geo index
@@ -84,7 +84,7 @@ app.post("/api/bus-positions", async (req, res) => {
           coordinates: [Number(lng), Number(lat)],
         },
       },
-      { upsert: true, new: true }
+      { upsert: true, new: true },
     );
 
     res.status(200).json({ message: "Position updated" });
